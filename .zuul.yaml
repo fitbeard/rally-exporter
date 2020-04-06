@@ -1,0 +1,32 @@
+- job:
+    name: rally_exporter:image:build
+    parent: vexxhost-build-docker-image
+    provides: rally_exporter:image
+    vars: &rally_exporter_images
+      docker_images:
+        - context: .
+          repository: vexxhost/rally-exporter
+
+- job:
+    name: rally_exporter:image:upload
+    parent: vexxhost-upload-docker-image
+    provides: rally_exporter:image
+    vars: *rally_exporter_images
+
+- job:
+    name: rally_exporter:image:promote
+    parent: vexxhost-promote-docker-image
+    vars: *rally_exporter_images
+
+- project:
+    check:
+      jobs:
+        - golangci-lint
+        - rally_exporter:image:build
+    gate:
+      jobs:
+        - golangci-lint
+        - rally_exporter:image:upload
+    promote:
+      jobs:
+        - rally_exporter:image:promote
