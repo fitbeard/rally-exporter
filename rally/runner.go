@@ -114,8 +114,9 @@ func (runner *PeriodicRunner) createDeployment() {
 	}
 
 	cmd := exec.Command("rally", "deployment", "create", "--filename", file.Name(), "--name", runner.CloudName)
-	_, err = cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
+		fmt.Println(string(output))
 		log.Fatal("Failed to install Rally deployment: ", err)
 	}
 }
