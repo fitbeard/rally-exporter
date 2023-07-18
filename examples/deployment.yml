@@ -1,0 +1,16 @@
+---
+openstack:
+  auth_url: http://identity.cloud.io:5000/v3
+  region_name: RegionOne
+  endpoint_type: public
+  admin:
+    username: admin
+    password: ysPr95QIrBd1eTaoChuF7yTapUDPngN68nmzfiLn
+    tenant_name: admin
+  users:
+  - username: b1
+    password: 123456
+    tenant_name: testing
+  - username: b2
+    password: 654321
+    tenant_name: testing
