@@ -6,4 +6,5 @@
 !/rally
 !/go.mod
 !/go.sum
+!/delete-tasks.sh
 !/rally_exporter.go

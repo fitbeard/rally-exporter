@@ -1,14 +1,11 @@
 package rally
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"os/exec"
+	"strconv"
 	"time"
 
-	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,18 +22,21 @@ type PeriodicRunner struct {
 	prometheus.Collector
 
 	CloudName string
-	TaskFile  string
+	ExecTime  int
+	TaskCount int
 
 	TaskDuration *prometheus.Desc
 	TaskSLADesc  *prometheus.Desc
 	TaskTime     *prometheus.Desc
 }
 
-// NewPeriodicRunner creates a rally runner which executes every 5 minutes
-func NewPeriodicRunner(cloudName string, taskFile string) *PeriodicRunner {
+// NewPeriodicRunner creates a rally runner which executes every
+// `execTime` minutes after last run.
+func NewPeriodicRunner(cloudName string, execTime int, taskCount int) *PeriodicRunner {
 	return &PeriodicRunner{
 		CloudName: cloudName,
-		TaskFile:  taskFile,
+		ExecTime:  execTime,
+		TaskCount: taskCount,
 		TaskDuration: prometheus.NewDesc(
 			"rally_task_duration",
 			"Rally task duration",
@@ -55,13 +55,29 @@ func NewPeriodicRunner(cloudName string, taskFile string) *PeriodicRunner {
 	}
 }
 
-// Run starts the PeriodicRunner which runs Rally every 5 minutes.
+// Run starts the PeriodicRunner which runs Rally every
+// `execTime` minutes after last run.
 func (runner *PeriodicRunner) Run() {
 	runner.createDeployment()
 
 	for {
-		log.Info("Starting Rally run...")
-		cmd := exec.Command("rally", "task", "start", runner.TaskFile)
+		currentTime := time.Now()
+
+		count := strconv.Itoa(runner.TaskCount)
+
+		log.Info("Deleting last Rally task")
+        // This is horrible. Should be rewritten in native golang.
+		precmd := exec.Command("/delete-tasks.sh", count)
+		preoutput, err := precmd.CombinedOutput()
+		if err != nil {
+			log.Error("Failed to delete last Rally task:")
+		} else {
+			log.Info("Deleted last Rally task:")
+		}
+		fmt.Println(string(preoutput))
+
+		log.Info("Starting Rally run at ", currentTime.String())
+		cmd := exec.Command("rally", "task", "start", "/conf/tasks.yml", "--task-args-file", "/conf/arguments.yml")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Error("Failed test, output below:")
@@ -70,50 +86,23 @@ func (runner *PeriodicRunner) Run() {
 		}
 		fmt.Println(string(output))
 
-		time.Sleep(5 * time.Minute)
+		minutes := runner.ExecTime
+		time.Sleep(time.Duration(minutes) * time.Minute)
 	}
 }
 
 func (runner *PeriodicRunner) createDeployment() {
-	opts := &clientconfig.ClientOpts{Cloud: runner.CloudName}
-	cloud, err := clientconfig.GetCloudFromYAML(opts)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	deployment := &Deployment{
-		OpenStackDeployment: OpenStackDeployment{
-			AuthURL:      cloud.AuthInfo.AuthURL,
-			RegionName:   cloud.RegionName,
-			EndpointType: cloud.EndpointType,
-			Users: []OpenStackUser{
-				OpenStackUser{
-					Username:          cloud.AuthInfo.Username,
-					Password:          cloud.AuthInfo.Password,
-					UserDomainName:    cloud.AuthInfo.UserDomainName,
-					ProjectName:       cloud.AuthInfo.ProjectName,
-					ProjectDomainName: cloud.AuthInfo.ProjectDomainName,
-				},
-			},
-		},
-	}
-
-	b, err := json.Marshal(deployment)
+	precmd := exec.Command("rally", "deployment", "destroy", runner.CloudName)
+	preoutput, err := precmd.CombinedOutput()
 	if err != nil {
-		log.Fatal(err)
+		log.Warn("There is no Rally deployment named '", runner.CloudName, "' to destroy.")
+	} else {
+		log.Info("Successfully destroyed Rally deployment named '", runner.CloudName, "'.")
 	}
+	fmt.Println(string(preoutput))
 
-	file, err := ioutil.TempFile("/tmp", "deployment")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.Remove(file.Name())
-	_, err = file.Write(b)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	cmd := exec.Command("rally", "deployment", "create", "--filename", file.Name(), "--name", runner.CloudName)
+	cmd := exec.Command("rally", "deployment", "create", "--filename", "/conf/deployment.yml", "--name", runner.CloudName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Println(string(output))
@@ -137,7 +126,7 @@ func getLatestTask(db *gorm.DB) (*models.Task, error) {
 
 // Collect grabs all the data from the Rally database
 func (runner *PeriodicRunner) Collect(ch chan<- prometheus.Metric) {
-	db, err := gorm.Open("sqlite3", "/home/rally/data/rally.db")
+	db, err := gorm.Open("sqlite3", "/home/rally/.rally/rally.db")
 	if err != nil {
 		log.Fatal(err)
 	}
