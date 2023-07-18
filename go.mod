@@ -26,7 +26,8 @@ require (
 	github.com/prometheus/client_model v0.0.0-20190115171406-56726106282f // indirect
 	github.com/prometheus/procfs v0.0.0-20190117184657-bf6a532e95b1 // indirect
 	github.com/sirupsen/logrus v1.2.0 // indirect
-	golang.org/x/crypto v0.0.0-20190325154230-a5d413f7728c // indirect
+	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/term v0.1.0 // indirect
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )
