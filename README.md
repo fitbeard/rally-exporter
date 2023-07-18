@@ -25,7 +25,7 @@ This exporter can be run:
 docker run \
 -v "$PWD/examples/deployment.yml":/conf/deployment.yml \
 -v "$PWD/examples/tasks.yml":/conf/tasks.yml \
--v "$PWD/examples/args.yml":/conf/arguments.yml \
+-v "$PWD/examples/arguments.yml":/conf/arguments.yml \
 -it -p 9355:9355 quay.io/tadas/rally-exporter:latest --deployment-name cloud1
 ```
 
