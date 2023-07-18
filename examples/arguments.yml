@@ -1,0 +1,7 @@
+---
+flavor_name: "c1.m2.50g"
+resize_flavor_name: "c2.m4.50g"
+enable_nova_multinode: true
+enable_nova_rebuild: false
+image_name: "rocky-9"
+network_id: "62f782dc-0c04-4271-bb95-4256ea63f402" # public

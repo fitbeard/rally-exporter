@@ -1,0 +1,434 @@
+{%- set enable_barbican = enable_barbican|default(true) %}
+{%- set enable_cinder = enable_cinder|default(true) %}
+{%- set enable_heat = enable_heat|default(true) %}
+{%- set enable_glance = enable_glance|default(true) %}
+{%- set enable_keystone = enable_keystone|default(true) %}
+{%- set enable_mistral = enable_mistral|default(true) %}
+{%- set enable_neutron = enable_neutron|default(true) %}
+{%- set enable_nova = enable_nova|default(true) %}
+{%- set enable_nova_multinode = enable_nova_multinode|default(true) %}
+{%- set enable_nova_rebuild = enable_nova_rebuild|default(true) %}
+{%- set enable_swift = enable_swift|default(true) %}
+{%- set enable_vm = enable_vm|default(true) %}
+
+{%- set times = times|default(4) %}
+{%- set concurrency = concurrency|default(2) %}
+
+---
+version: 2
+title: "Collect OpenStack Metrics"
+description: |
+  Use this task to collect performance metrics for key OpenStack projects
+  You can use arguments to specify image, flavor, load and what services
+  should be tested
+subtasks:
+{% if enable_keystone %}
+  -
+    title: "keystone"
+    scenario:
+      KeystoneBasic.authenticate_user_and_validate_token: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_glance %}
+  -
+    title: "glance"
+    scenario:
+      GlanceImages.list_images: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_neutron %}
+  -
+    title: "neutron"
+    scenario:
+      NeutronNetworks.list_agents: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_swift %}
+  -
+    title: "swift"
+    scenario:
+      SwiftObjects.create_container_and_object_then_delete_all:
+        objects_per_container: 5
+        object_size: 102400
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_nova %}
+  -
+    title: "nova"
+    workloads:
+{% if enable_nova_multinode %}
+      -
+        scenario:
+          NovaServers.boot_and_live_migrate_server:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            block_migration: false
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+      -
+        scenario:
+          NovaServers.boot_and_get_console_output:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+      -
+        scenario:
+          NovaServers.boot_and_get_console_url:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            console_type: "novnc"
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% if enable_nova_rebuild %}
+      -
+        scenario:
+          NovaServers.boot_and_rebuild_server:
+            flavor:
+              name: "{{ flavor_name }}"
+            from_image:
+              name: "{{ image_name }}"
+            to_image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+{% if enable_nova_multinode %}
+      -
+        scenario:
+          NovaServers.resize_server:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            to_flavor:
+              name: "{{ resize_flavor_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            confirm: true
+            force_delete: false
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+      -
+        scenario:
+          NovaServers.suspend_and_resume_server:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            force_delete: false
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+{% if enable_cinder %}
+  -
+    title: "cinder"
+    workloads:
+      -
+        scenario:
+          CinderVolumes.create_and_attach_volume:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            size: 8
+            create_volume_params:
+              availability_zone: "nova"
+              volume_type: "standard"
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+      -
+        scenario:
+          CinderVolumes.create_and_extend_volume:
+            size: 8
+            new_size: 16
+            volume_type: "standard"
+        runner:
+          constant:
+            times: {{ times }}
+            concurrency: {{ concurrency }}
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+{% if enable_vm %}
+  -
+    title: "vm"
+    workloads:
+      -
+        scenario:
+          VMTasks.boot_runcommand_delete:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            force_delete: false
+            max_log_length: 150
+            wait_for_ping: true
+            username: "root"
+            use_floating_ip: false
+            userdata: |
+              #cloud-config
+              user: root
+              password: s0m3passwordf0rRally
+              ssh_pwauth: true
+              chpasswd: { expire: false }
+              disable_root: false
+            command:
+              interpreter: "/bin/bash"
+              script_inline: |
+                #!/usr/bin/bash
+                # Load server and output JSON results ready to be processed
+                # by Rally scenario
+
+                metadata=$(curl --write-out "%{http_code}" --max-time 5 --silent --output /dev/null http://169.254.169.254/latest/meta-data/instance-id)
+
+                if test "$metadata" != "200"; then
+                   echo "metadata failed with status code: $metadata"
+                   exit 1
+                fi
+
+                get_seconds() {
+                    (time -p ${1}) 2>&1 | awk '/real/{print $2}'
+                }
+
+                complete_load_fake() {
+                    cat << EOF
+                    {
+                      "title": "DO NOT REMOVE Generate load by spawning processes",
+                      "description": "Each process runs gzip for size urandom data in a loop",
+                      "chart_plugin": "Lines",
+                      "axis_label": "Number of processes",
+                      "label": "Usage, %",
+                      "data": [
+                        ["CPU", [1]],
+                        ["Memory", [1]],
+                        ["Disk", [1]]]
+                    }
+                EOF
+                }
+                additive() {
+                    local set_metadata=$(get_seconds 'curl --max-time 5 http://169.254.169.254/latest/meta-data/instance-id')
+                    cat << EOF
+                    {
+                      "title": "Metadata access time",
+                      "description": "Description",
+                      "chart_plugin": "StackedArea",
+                      "data": [
+                        ["Metadata", ${set_metadata}]]
+                    }
+                EOF
+                }
+                cat << EOF
+                {
+                  "additive": [$(additive)],
+                  "complete": [$(complete_load_fake)]
+                }
+                EOF
+        runner:
+          constant:
+            times: 1
+            concurrency: 1
+        sla:
+          failure_rate:
+            max: 0
+      -
+        scenario:
+          VMTasks.boot_runcommand_delete:
+            flavor:
+              name: "{{ flavor_name }}"
+            image:
+              name: "{{ image_name }}"
+            nics:
+              - net-id: "{{ network_id }}"
+            force_delete: false
+            max_log_length: 150
+            wait_for_ping: true
+            username: "root"
+            use_floating_ip: false
+            userdata: |
+              #cloud-config
+              user: root
+              password: s0m3passwordf0rRally
+              ssh_pwauth: true
+              chpasswd: { expire: false }
+              disable_root: false
+            command:
+              interpreter: "/bin/bash"
+              script_inline: |
+                #!/usr/bin/bash
+                # Load server and output JSON results ready to be processed
+                # by Rally scenario
+
+                test_ping=$(ping -c 10 google.com > /dev/null 2>&1 ; echo $?)
+
+                if test "$test_ping" != "0"; then
+                   echo "ping failed with status code: $test_ping"
+                   exit 1
+                fi
+
+                get_seconds() {
+                    (time -p ${1}) 2>&1 | awk '/real/{print $2}'
+                }
+
+                complete_load_fake() {
+                    cat << EOF
+                    {
+                      "title": "DO NOT REMOVE Generate load by spawning processes",
+                      "description": "Each process runs gzip for size urandom data in a loop",
+                      "chart_plugin": "Lines",
+                      "axis_label": "Number of processes",
+                      "label": "Usage, %",
+                      "data": [
+                        ["CPU", [1]],
+                        ["Memory", [1]],
+                        ["Disk", [1]]]
+                    }
+                EOF
+                }
+                additive() {
+                    local set_ping=$(get_seconds 'ping -c 10 google.com')
+                    cat << EOF
+                    {
+                      "title": "Google ping 10x time",
+                      "description": "Description",
+                      "chart_plugin": "StackedArea",
+                      "data": [
+                        ["Ping", ${set_ping}]]
+                    }
+                EOF
+                }
+                cat << EOF
+                {
+                  "additive": [$(additive)],
+                  "complete": [$(complete_load_fake)]
+                }
+                EOF
+        runner:
+          constant:
+            times: 1
+            concurrency: 1
+        sla:
+          failure_rate:
+            max: 0
+{% endif %}
+{% if enable_barbican %}
+  -
+    title: "barbican"
+    scenario:
+      BarbicanSecrets.create_and_delete: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_mistral %}
+  -
+    title: "mistral"
+    scenario:
+      MistralWorkbooks.list_workbooks: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
+{% if enable_heat %}
+  -
+    title: "heat"
+    scenario:
+      HeatStacks.list_stacks_and_resources: {}
+    runner:
+      constant:
+        times: {{ times }}
+        concurrency: {{ concurrency }}
+    sla:
+      failure_rate:
+        max: 0
+{% endif %}
