@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# Allow files and directories
+!/models
+!/rally
+!/go.mod
+!/go.sum
+!/rally_exporter.go
