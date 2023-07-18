@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/common/version"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"opendev.org/vexxhost/rally-exporter/rally"
+	"github.com/fitbeard/rally-exporter/rally"
 )
 
 func main() {

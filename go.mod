@@ -1,4 +1,4 @@
-module opendev.org/vexxhost/rally-exporter
+module github.com/fitbeard/rally-exporter
 
 go 1.13
 

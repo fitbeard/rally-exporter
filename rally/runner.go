@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 
-	"opendev.org/vexxhost/rally-exporter/models"
+	"github.com/fitbeard/rally-exporter/models"
 )
 
 // TaskLabels has the common labels used by every task.
