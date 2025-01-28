@@ -1,4 +1,4 @@
-module github.com/fitbeard/rally-exporter
+module github.com/KouroshVivan/rally-exporter
 
 go 1.20
 

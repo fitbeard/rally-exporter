@@ -1,9 +1,10 @@
 package rally
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jinzhu/gorm"
@@ -11,23 +12,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
 
-	"github.com/fitbeard/rally-exporter/models"
+	"github.com/KouroshVivan/rally-exporter/models"
 )
 
 // TaskLabels has the common labels used by every task.
-var TaskLabels = []string{"title"}
+var TaskLabels = []string{"name"}
 
 // PeriodicRunner defines the structure of the collector
 type PeriodicRunner struct {
 	prometheus.Collector
 
-	CloudName string
-	ExecTime  int
-	TaskCount int
+	CloudName       string
+	ExecTime        int
+	TaskCount       int
+	FailedTaskCount int
 
-	TaskDuration *prometheus.Desc
-	TaskSLADesc  *prometheus.Desc
-	TaskTime     *prometheus.Desc
+	TaskDuration       *prometheus.Desc
+	AtomicTaskDuration *prometheus.Desc
+	TaskSLADesc        *prometheus.Desc
+	TaskTime           *prometheus.Desc
 }
 
 // NewPeriodicRunner creates a rally runner which executes every
@@ -41,6 +44,11 @@ func NewPeriodicRunner(cloudName string, execTime int, taskCount int) *PeriodicR
 			"rally_task_duration",
 			"Rally task duration",
 			TaskLabels, nil,
+		),
+		AtomicTaskDuration: prometheus.NewDesc(
+			"rally_subtask_duration",
+			"Rally subtask duration",
+			append(TaskLabels, "step"), nil,
 		),
 		TaskSLADesc: prometheus.NewDesc(
 			"rally_task_passed",
@@ -63,28 +71,16 @@ func (runner *PeriodicRunner) Run() {
 	for {
 		currentTime := time.Now()
 
-		count := strconv.Itoa(runner.TaskCount)
+		log.Info("Remove old tasks")
+		runner.removeOldTasks(runner.TaskCount)
 
-		log.Info("Deleting last Rally task")
-        // This is horrible. Should be rewritten in native golang.
-		precmd := exec.Command("/delete-tasks.sh", count)
-		preoutput, err := precmd.CombinedOutput()
-		if err != nil {
-			log.Error("Failed to delete last Rally task:")
-		} else {
-			log.Info("Deleted last Rally task:")
-		}
-		fmt.Println(string(preoutput))
-
-		log.Info("Starting Rally run at ", currentTime.String())
+		log.Info("Starting Rally run at ", currentTime.Format(time.DateTime))
 		cmd := exec.Command("rally", "task", "start", "/conf/tasks.yml", "--task-args-file", "/conf/arguments.yml")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Error("Failed test, output below:")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			log.Error("Failed test")
 		} else {
-			log.Info("Successful run, output below:")
+			log.Info("Successful run")
 		}
-		fmt.Println(string(output))
 
 		minutes := runner.ExecTime
 		time.Sleep(time.Duration(minutes) * time.Minute)
@@ -94,24 +90,40 @@ func (runner *PeriodicRunner) Run() {
 func (runner *PeriodicRunner) createDeployment() {
 
 	precmd := exec.Command("rally", "deployment", "destroy", runner.CloudName)
-	preoutput, err := precmd.CombinedOutput()
-	if err != nil {
-		log.Warn("There is no Rally deployment named '", runner.CloudName, "' to destroy.")
+	if _, err := precmd.CombinedOutput(); err != nil {
+		log.Warn("There is no Rally deployment named '", runner.CloudName, "' to destroy")
 	} else {
-		log.Info("Successfully destroyed Rally deployment named '", runner.CloudName, "'.")
+		log.Info("Successfully destroyed Rally deployment named '", runner.CloudName, "'")
 	}
-	fmt.Println(string(preoutput))
 
 	cmd := exec.Command("rally", "deployment", "create", "--filename", "/conf/deployment.yml", "--name", runner.CloudName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Println(string(output))
 		log.Fatal("Failed to install Rally deployment: ", err)
 	}
 }
+func (runner *PeriodicRunner) removeOldTasks(taskcount int) {
+
+	if out, err := exec.Command("rally", "task", "list", "--uuids-only").Output(); err != nil {
+		log.Warn("Cannot list tasks: ", err)
+	} else {
+		taskUUIDs := strings.Split(string(out), "\n")
+		log.Info("Found ", len(taskUUIDs), " tasks (", taskcount, " to keep)")
+		if len(taskUUIDs) > taskcount {
+			taskUUIDs = taskUUIDs[:len(taskUUIDs)-taskcount]
+			if _, err := exec.Command("rally", "task", "delete", "--uuid", strings.Join(taskUUIDs, " ")).Output(); err != nil {
+				log.Warn("Cannot delete tasks: ", err)
+			} else {
+				log.Info("Sucessfully removed ", taskUUIDs, " tasks")
+			}
+		}
+	}
+
+}
 
 // Describe provides all the descriptions of all the information for the collector
 func (runner *PeriodicRunner) Describe(ch chan<- *prometheus.Desc) {
+	ch <- runner.AtomicTaskDuration
 	ch <- runner.TaskDuration
 	ch <- runner.TaskSLADesc
 	ch <- runner.TaskTime
@@ -122,6 +134,30 @@ func getLatestTask(db *gorm.DB) (*models.Task, error) {
 	err := db.Not("status", []string{"running"}).Last(task).Error
 
 	return task, err
+}
+
+func (runner PeriodicRunner) GetTasks() string {
+	db, err := gorm.Open("sqlite3", "/home/rally/.rally/rally.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	tasks := []models.Task{}
+	if err := db.Find(&tasks).Error; err != nil {
+		log.Fatal(err)
+	}
+
+	htmlResponse := "<h1>Tasks</h1>\n"
+	for _, task := range tasks {
+		htmlResponse += fmt.Sprintf("<li>%s %s %f %s <a href=\"/%s\">report</a></li>\n", task.UUID, task.CreatedAt.Format(time.DateTime), task.TaskDuration, task.Status, task.UUID)
+	}
+
+	return htmlResponse
+}
+
+func (runner PeriodicRunner) GenReport(TaskUUID string) ([]byte, error) {
+	return exec.Command("rally", "task", "report", "--html", "--uuid", TaskUUID).Output()
 }
 
 // Collect grabs all the data from the Rally database
@@ -159,6 +195,26 @@ func (runner *PeriodicRunner) Collect(ch chan<- prometheus.Metric) {
 			prometheus.GaugeValue,
 			passSLA, subtask.Title,
 		)
+
+		// Generate atomics action metrics
+		workloads := []models.Workload{}
+		if err := db.Where(&models.Workload{SubtaskUUID: subtask.UUID}).Find(&workloads).Error; err != nil {
+			log.Fatal(err)
+		}
+		for _, workload := range workloads {
+			StatisticsData := workload.Statistics
+			StatisticsJSON := models.StatisticsFormat{}
+			if err := json.Unmarshal([]byte(StatisticsData), &StatisticsJSON); err != nil {
+				log.Fatal(err)
+			}
+			for _, Atomic := range StatisticsJSON.Durations.Atomics {
+				ch <- prometheus.MustNewConstMetric(
+					runner.AtomicTaskDuration,
+					prometheus.GaugeValue,
+					Atomic.Data.Avg, subtask.Title, Atomic.Name,
+				)
+			}
+		}
 	}
 
 	ch <- prometheus.MustNewConstMetric(

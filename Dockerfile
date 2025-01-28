@@ -9,8 +9,6 @@ FROM xrally/xrally-openstack:latest
 
 USER root
 
-COPY delete-tasks.sh /delete-tasks.sh
-RUN chmod +x /delete-tasks.sh
 COPY --from=builder /go/src/app/rally-exporter /rally-exporter
 ENTRYPOINT ["/rally-exporter"]
 
